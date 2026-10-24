@@ -1,0 +1,18 @@
+[package]
+name = "foxgarden-kmp"
+version.workspace = true
+edition.workspace = true
+description = "Kotlin Multiplatform support for FoxGarden, as an extension"
+
+[lib]
+name = "foxgarden_kmp"
+path = "src/lib.rs"
+
+# Like `foxgarden-spring`, this crate reaches the editor only through
+# `fg-extension`. Kotlin itself (grammar, language server, Gradle) is the
+# spring extension's; this one adds what only a multiplatform project has.
+[dependencies]
+fg-extension = { path = "../../../foxgarden/crates/extension" }
+
+[dev-dependencies]
+tempfile = "3.27.0"
