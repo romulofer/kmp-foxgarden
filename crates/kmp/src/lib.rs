@@ -39,6 +39,10 @@ impl Extension for KmpExtension {
         reports::task_test_results(report_dirs)
     }
 
+    fn file_task(&self, project_root: &Path, file: &Path) -> Option<ProjectTask> {
+        tasks::file_task(project_root, file)
+    }
+
     fn project_tasks(&self, project_root: &Path) -> Vec<ProjectTask> {
         tasks::project_tasks(project_root)
     }

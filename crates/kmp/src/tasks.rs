@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 use fg_extension::{CommandSpec, ProjectTask};
 
-use crate::source_set::uses_multiplatform_plugin;
+use crate::source_set::{locate, uses_multiplatform_plugin};
 
 /// Directories a module is not looked for in.
 const SKIPPED: [&str; 7] = [".git", ".gradle", ".idea", "build", "node_modules", "out", "target"];
@@ -127,10 +127,6 @@ fn modules(root: &Path) -> Vec<(PathBuf, String)> {
     found
 }
 
-fn name_is_all(task: &str) -> bool {
-    task.rsplit(':').next() == Some("allTests")
-}
-
 /// The Gradle launcher for a project: its wrapper when it has one, else
 /// whatever `gradle` is on the path.
 fn gradle_program(root: &Path) -> PathBuf {
@@ -138,35 +134,84 @@ fn gradle_program(root: &Path) -> PathBuf {
     if wrapper.is_file() { wrapper } else { PathBuf::from(if cfg!(windows) { "gradle.bat" } else { "gradle" }) }
 }
 
+/// The task running `names` (task names within the module at `path`) for the
+/// module in `dir`, launched from `root`. A test task reports into a directory
+/// named after it, and `allTests` runs every target's.
+fn build_task(root: &Path, dir: &Path, path: &str, names: &[String], declared: &[Target]) -> ProjectTask {
+    let results = dir.join("build").join("test-results");
+    let mut args = vec!["--console=plain".to_string()];
+    let mut report_dirs = Vec::new();
+    let mut labels = Vec::new();
+    for name in names {
+        // The root module's tasks need no project path.
+        let task = if path.is_empty() { name.clone() } else { format!("{path}:{name}") };
+        if name == "allTests" {
+            report_dirs.extend(declared.iter().map(|t| results.join(format!("{}Test", t.name))));
+        } else if name.ends_with("Test") {
+            report_dirs.push(results.join(name));
+        }
+        labels.push(task.clone());
+        args.push(task);
+    }
+    let mut command = CommandSpec::new(gradle_program(root), root);
+    command.args = args;
+    ProjectTask { label: format!("Gradle: {}", labels.join(" ")), command, report_dirs }
+}
+
+fn build_file_text(dir: &Path) -> String {
+    ["build.gradle.kts", "build.gradle"]
+        .iter()
+        .find_map(|name| std::fs::read_to_string(dir.join(name)).ok())
+        .unwrap_or_default()
+}
+
 /// Every per-target task of every multiplatform module in the project.
 pub fn project_tasks(root: &Path) -> Vec<ProjectTask> {
     let mut tasks = Vec::new();
     for (dir, path) in modules(root) {
-        let text = ["build.gradle.kts", "build.gradle"]
-            .iter()
-            .find_map(|name| std::fs::read_to_string(dir.join(name)).ok())
-            .unwrap_or_default();
-        let declared = targets(&text);
-        let results = dir.join("build").join("test-results");
+        let declared = targets(&build_file_text(&dir));
         for name in task_names(&declared) {
-            let task = format!("{path}:{name}");
-            // The root module's tasks need no project path.
-            let task = if path.is_empty() { name } else { task };
-            let mut command = CommandSpec::new(gradle_program(root), root);
-            command.args = vec!["--console=plain".to_string(), task.clone()];
-            // A test task reports into a directory named after it; `allTests`
-            // runs every target's.
-            let report_dirs = if name_is_all(&task) {
-                declared.iter().map(|t| results.join(format!("{}Test", t.name))).collect()
-            } else if task.ends_with("Test") {
-                vec![results.join(task.rsplit(':').next().unwrap_or(&task))]
-            } else {
-                Vec::new()
-            };
-            tasks.push(ProjectTask { label: format!("Gradle: {task}"), command, report_dirs });
+            tasks.push(build_task(root, &dir, &path, &[name], &declared));
         }
     }
     tasks
+}
+
+/// The targets a source set named `base` (its name without `Main`/`Test`)
+/// covers: `common` all of them, a target's own name that target, and the
+/// intermediate sets (`ios`, `native`, `apple`) the targets they group.
+fn covered<'a>(base: &str, declared: &'a [Target]) -> Vec<&'a Target> {
+    let apple = ["ios", "macos", "tvos", "watchos"];
+    declared
+        .iter()
+        .filter(|t| match base {
+            "common" => true,
+            "native" => t.kind == Kind::Native,
+            "apple" => apple.iter().any(|p| t.name.starts_with(p)) && t.kind == Kind::Native,
+            _ => t.name == base || (NATIVE_PREFIXES.contains(&base) && t.kind == Kind::Native && t.name.starts_with(base)),
+        })
+        .collect()
+}
+
+/// The task running the tests of the source set `file` is in: `allTests` for
+/// common code, the covered targets' `<target>Test` otherwise. `None` for a
+/// file outside a multiplatform module, or a source set no declared target
+/// covers.
+pub fn file_task(root: &Path, file: &Path) -> Option<ProjectTask> {
+    let (dir, set) = locate(root, file)?;
+    let base = set.strip_suffix("Main").or_else(|| set.strip_suffix("Test"))?;
+    let declared = targets(&build_file_text(&dir));
+    let names: Vec<String> = if base == "common" {
+        vec!["allTests".to_string()]
+    } else {
+        covered(base, &declared).iter().map(|t| format!("{}Test", t.name)).collect()
+    };
+    if names.is_empty() {
+        return None;
+    }
+    let relative = dir.strip_prefix(root).ok()?;
+    let path: String = relative.iter().filter_map(|p| p.to_str()).map(|p| format!(":{p}")).collect();
+    Some(build_task(root, &dir, &path, &names, &declared))
 }
 
 #[cfg(test)]

@@ -113,3 +113,61 @@ fn test_tasks_name_the_directories_they_report_into() {
     );
     assert!(by_label("Gradle: :shared:linkDebugExecutableIosArm64").report_dirs.is_empty());
 }
+
+fn module_with(targets: &str) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("build.gradle.kts"),
+        format!("plugins {{ kotlin(\"multiplatform\") }}\nkotlin {{ {targets} }}\n"),
+    )
+    .unwrap();
+    dir
+}
+
+fn file_task_args(dir: &tempfile::TempDir, relative: &str) -> Option<Vec<String>> {
+    file_task(dir.path(), &dir.path().join(relative)).map(|t| t.command.args[1..].to_vec())
+}
+
+#[test]
+fn common_code_runs_every_targets_tests() {
+    let dir = module_with("jvm(); iosArm64()");
+    assert_eq!(file_task_args(&dir, "src/commonMain/kotlin/A.kt").unwrap(), ["allTests"]);
+    assert_eq!(file_task_args(&dir, "src/commonTest/kotlin/A.kt").unwrap(), ["allTests"]);
+}
+
+#[test]
+fn a_platform_file_runs_that_platforms_tests() {
+    let dir = module_with("jvm(); iosArm64(); iosX64()");
+    assert_eq!(file_task_args(&dir, "src/jvmMain/kotlin/A.kt").unwrap(), ["jvmTest"]);
+    assert_eq!(file_task_args(&dir, "src/jvmTest/kotlin/A.kt").unwrap(), ["jvmTest"]);
+}
+
+#[test]
+fn an_intermediate_source_set_runs_the_tests_of_the_targets_it_groups() {
+    let dir = module_with("jvm(); iosArm64(); iosX64(); linuxX64()");
+    assert_eq!(file_task_args(&dir, "src/iosMain/kotlin/A.kt").unwrap(), ["iosArm64Test", "iosX64Test"]);
+    assert_eq!(file_task_args(&dir, "src/nativeMain/kotlin/A.kt").unwrap(), ["iosArm64Test", "iosX64Test", "linuxX64Test"]);
+    assert_eq!(file_task_args(&dir, "src/appleMain/kotlin/A.kt").unwrap(), ["iosArm64Test", "iosX64Test"]);
+}
+
+#[test]
+fn no_task_for_a_source_set_no_target_covers_or_a_file_outside_a_module() {
+    let dir = module_with("jvm()");
+    assert_eq!(file_task_args(&dir, "src/iosMain/kotlin/A.kt"), None);
+    assert_eq!(file_task_args(&dir, "src/jvmMain/resources/a.txt").unwrap(), ["jvmTest"]);
+    assert_eq!(file_task_args(&dir, "README.md"), None);
+}
+
+#[test]
+fn a_submodule_file_gets_a_task_with_its_project_path() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("shared")).unwrap();
+    std::fs::write(
+        dir.path().join("shared/build.gradle.kts"),
+        "plugins { kotlin(\"multiplatform\") }\nkotlin { jvm() }\n",
+    )
+    .unwrap();
+    let task = file_task(dir.path(), &dir.path().join("shared/src/jvmTest/kotlin/A.kt")).unwrap();
+    assert_eq!(task.label, "Gradle: :shared:jvmTest");
+    assert_eq!(task.report_dirs, [dir.path().join("shared/build/test-results/jvmTest")]);
+}

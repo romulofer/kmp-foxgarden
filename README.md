@@ -27,6 +27,10 @@ everything Kotlin itself. Both checkouts must sit beside `foxgarden`.
   wrapper. A test task ends with a pass/fail summary read from its JUnit
   reports, each failure linking to the test in its source set.
 
+- **Tests of a source set**: from a file, "Run tests for this source set" runs
+  `allTests` for common code and the covered targets' tests for a platform
+  or a group such as `iosMain`.
+
 Planned: per-target `actual` checks, run configurations for these tasks, build/run/test tasks, then per-source-set language server
 classpaths.
 
