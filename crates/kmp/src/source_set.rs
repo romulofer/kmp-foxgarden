@@ -9,15 +9,30 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::tasks::{build_file_text, covered, targets};
+
 /// The directories under `src/<source set>/` that hold sources.
 pub(crate) const SOURCE_DIRS: [&str; 3] = ["kotlin", "java", "resources"];
 
 /// The source set `file` belongs to, when it sits in a Kotlin Multiplatform
-/// module of the project at `project_root`. `None` for any other file,
-/// including every file of an ordinary Gradle or Maven module, whose
-/// `src/main` and `src/test` are not source sets in this sense.
+/// module of the project at `project_root`. An intermediate set (`iosMain`,
+/// `nativeTest`) names the declared targets it groups, since its name alone
+/// does not say which they are: `iosMain (iosArm64, iosX64)`. `None` for any
+/// other file, including every file of an ordinary Gradle or Maven module,
+/// whose `src/main` and `src/test` are not source sets in this sense.
 pub fn source_set(project_root: &Path, file: &Path) -> Option<String> {
-    locate(project_root, file).map(|(_, set)| set)
+    let (module, set) = locate(project_root, file)?;
+    let base = set.strip_suffix("Main").or_else(|| set.strip_suffix("Test")).unwrap_or(&set);
+    if base == "common" {
+        return Some(set);
+    }
+    let declared = targets(&build_file_text(&module));
+    let grouped: Vec<&str> = covered(base, &declared).iter().map(|t| t.name.as_str()).collect();
+    // A target's own set (`jvmMain`) is already named by its target.
+    if grouped.is_empty() || grouped == [base] {
+        return Some(set);
+    }
+    Some(format!("{set} ({})", grouped.join(", ")))
 }
 
 /// The multiplatform module `file` sits in and the source set within it.

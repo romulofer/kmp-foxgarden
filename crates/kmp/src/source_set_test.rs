@@ -66,3 +66,16 @@ fn files_outside_the_source_layout_or_the_project_have_none() {
     assert_eq!(source_set_of(&dir, "src/commonMain/Stray.kt"), None, "needs a kotlin/java/resources directory");
     assert_eq!(source_set(dir.path(), Path::new("/elsewhere/src/commonMain/kotlin/A.kt")), None);
 }
+
+#[test]
+fn an_intermediate_set_names_the_declared_targets_it_groups() {
+    let dir = project(
+        "build.gradle.kts",
+        "plugins { kotlin(\"multiplatform\") }\nkotlin {\n    jvm()\n    iosArm64()\n    iosX64()\n    linuxX64()\n}\n",
+    );
+    assert_eq!(source_set_of(&dir, "src/iosMain/kotlin/A.kt").as_deref(), Some("iosMain (iosArm64, iosX64)"));
+    assert_eq!(source_set_of(&dir, "src/nativeTest/kotlin/A.kt").as_deref(), Some("nativeTest (iosArm64, iosX64, linuxX64)"));
+    assert_eq!(source_set_of(&dir, "src/commonMain/kotlin/A.kt").as_deref(), Some("commonMain"));
+    assert_eq!(source_set_of(&dir, "src/jvmMain/kotlin/A.kt").as_deref(), Some("jvmMain"));
+    assert_eq!(source_set_of(&dir, "src/linuxX64Main/kotlin/A.kt").as_deref(), Some("linuxX64Main"));
+}
