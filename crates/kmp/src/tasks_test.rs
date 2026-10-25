@@ -98,3 +98,18 @@ fn a_project_with_no_multiplatform_module_has_no_tasks() {
     std::fs::write(dir.path().join("build.gradle.kts"), "plugins { kotlin(\"jvm\") }\n").unwrap();
     assert!(project_tasks(dir.path()).is_empty());
 }
+
+#[test]
+fn test_tasks_name_the_directories_they_report_into() {
+    let dir = project();
+    let tasks = project_tasks(dir.path());
+    let reports = dir.path().join("shared/build/test-results");
+    let by_label = |label: &str| tasks.iter().find(|t| t.label == label).unwrap();
+
+    assert_eq!(by_label("Gradle: :shared:jvmTest").report_dirs, [reports.join("jvmTest")]);
+    assert_eq!(
+        by_label("Gradle: :shared:allTests").report_dirs,
+        [reports.join("jvmTest"), reports.join("iosArm64Test")]
+    );
+    assert!(by_label("Gradle: :shared:linkDebugExecutableIosArm64").report_dirs.is_empty());
+}

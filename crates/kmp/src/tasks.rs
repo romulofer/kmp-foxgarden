@@ -127,6 +127,10 @@ fn modules(root: &Path) -> Vec<(PathBuf, String)> {
     found
 }
 
+fn name_is_all(task: &str) -> bool {
+    task.rsplit(':').next() == Some("allTests")
+}
+
 /// The Gradle launcher for a project: its wrapper when it has one, else
 /// whatever `gradle` is on the path.
 fn gradle_program(root: &Path) -> PathBuf {
@@ -142,13 +146,24 @@ pub fn project_tasks(root: &Path) -> Vec<ProjectTask> {
             .iter()
             .find_map(|name| std::fs::read_to_string(dir.join(name)).ok())
             .unwrap_or_default();
-        for name in task_names(&targets(&text)) {
+        let declared = targets(&text);
+        let results = dir.join("build").join("test-results");
+        for name in task_names(&declared) {
             let task = format!("{path}:{name}");
             // The root module's tasks need no project path.
             let task = if path.is_empty() { name } else { task };
             let mut command = CommandSpec::new(gradle_program(root), root);
             command.args = vec!["--console=plain".to_string(), task.clone()];
-            tasks.push(ProjectTask { label: format!("Gradle: {task}"), command });
+            // A test task reports into a directory named after it; `allTests`
+            // runs every target's.
+            let report_dirs = if name_is_all(&task) {
+                declared.iter().map(|t| results.join(format!("{}Test", t.name))).collect()
+            } else if task.ends_with("Test") {
+                vec![results.join(task.rsplit(':').next().unwrap_or(&task))]
+            } else {
+                Vec::new()
+            };
+            tasks.push(ProjectTask { label: format!("Gradle: {task}"), command, report_dirs });
         }
     }
     tasks

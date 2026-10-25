@@ -24,7 +24,8 @@ everything Kotlin itself. Both checkouts must sit beside `foxgarden`.
 - **Per-target Gradle tasks**: the command palette lists `allTests` and each
   declared target's `<target>Test` (plus `linkDebugExecutable<Target>` for
   native ones), read from the build file and run through the project's Gradle
-  wrapper.
+  wrapper. A test task ends with a pass/fail summary read from its JUnit
+  reports, each failure linking to the test in its source set.
 
 Planned: per-target `actual` checks, run configurations for these tasks, build/run/test tasks, then per-source-set language server
 classpaths.
