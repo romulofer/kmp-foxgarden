@@ -8,12 +8,12 @@
 //! the user choose. The scan reads every source file of the module, which
 //! is why it answers a command and never a frame.
 
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use fg_extension::{Counterpart, FileDiagnostic, ProblemSeverity};
 
 use crate::source_set::{SOURCE_DIRS, locate};
+use crate::tasks::{build_file_text, covered, targets};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Role {
@@ -195,30 +195,72 @@ fn module_declarations(module: &Path) -> Vec<(String, PathBuf, Declaration)> {
     all
 }
 
-/// A warning on every `expect` in `source` that no `actual` anywhere in the
-/// module fulfils. Matched by name, like [`counterparts`], so an overload with
-/// an `actual` of the same name counts as fulfilled. A file with no `expect`
-/// costs one pass over its own text; the module is only read when it has one.
+/// The source set's name without its `Main`/`Test` suffix (`jvm` for
+/// `jvmMain`), and which of the two it was.
+fn split_set(set: &str) -> Option<(&str, &str)> {
+    ["Main", "Test"].iter().find_map(|suffix| set.strip_suffix(suffix).map(|base| (base, *suffix)))
+}
+
+/// A warning on every `expect` in `source` that some declared target gets no
+/// `actual` for. Matched by name, like [`counterparts`], so an overload with
+/// an `actual` of the same name counts as fulfilled. A target is served by an
+/// `actual` in its own source set or in an intermediate one that covers it
+/// (`iosMain` for `iosArm64`). A file with no `expect` costs one pass over its
+/// own text; the module is only read when it has one.
+///
+/// Sets this does not understand (`androidMain` with no `androidTarget`
+/// declared, say) are taken to serve every target rather than guessed at, and
+/// a build file whose targets cannot be read falls back to "no `actual`
+/// anywhere".
 pub fn missing_actuals(project_root: &Path, file: &Path, source: &str) -> Vec<FileDiagnostic> {
     let expects: Vec<Declaration> = declarations(source).into_iter().filter(|d| d.role == Role::Expect).collect();
     if expects.is_empty() {
         return Vec::new();
     }
-    let Some((module, _)) = locate(project_root, file) else {
+    let Some((module, own_set)) = locate(project_root, file) else {
         return Vec::new();
     };
-    let actual_names: HashSet<String> = module_declarations(&module)
+    let declared = targets(&build_file_text(&module));
+    let actuals: Vec<(String, String)> = module_declarations(&module)
         .into_iter()
         .filter(|(_, _, d)| d.role == Role::Actual)
-        .map(|(_, _, d)| d.name)
+        .map(|(set, _, d)| (set, d.name))
         .collect();
+    let (own_base, own_suffix) = split_set(&own_set).unwrap_or(("common", "Main"));
+
     expects
         .into_iter()
-        .filter(|d| !actual_names.contains(&d.name))
-        .map(|d| FileDiagnostic {
-            range: d.name_byte..d.name_byte + d.name.len(),
-            severity: ProblemSeverity::Warning,
-            message: format!("expect '{}' has no actual declaration", d.name),
+        .filter_map(|d| {
+            let named: Vec<&str> =
+                actuals.iter().filter(|(_, name)| *name == d.name).map(|(set, _)| set.as_str()).collect();
+            let message = if named.is_empty() {
+                format!("expect '{}' has no actual declaration", d.name)
+            } else {
+                let needed = covered(own_base, &declared);
+                let unserved: Vec<&str> = needed
+                    .iter()
+                    .filter(|target| {
+                        !named.iter().any(|set| match split_set(set) {
+                            Some((base, suffix)) if suffix == own_suffix && base != "common" => {
+                                let covers = covered(base, &declared);
+                                covers.is_empty() || covers.contains(target)
+                            }
+                            // An `actual` in a set this cannot place.
+                            _ => true,
+                        })
+                    })
+                    .map(|target| target.name.as_str())
+                    .collect();
+                if unserved.is_empty() {
+                    return None;
+                }
+                format!("expect '{}' has no actual for {}", d.name, unserved.join(", "))
+            };
+            Some(FileDiagnostic {
+                range: d.name_byte..d.name_byte + d.name.len(),
+                severity: ProblemSeverity::Warning,
+                message,
+            })
         })
         .collect()
 }

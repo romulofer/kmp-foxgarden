@@ -136,3 +136,63 @@ fn declaration_lines_are_the_expect_and_actual_ones() {
     assert_eq!(declaration_lines(source), vec![2, 4]);
     assert!(declaration_lines("fun main() {}\n").is_empty());
 }
+
+fn targeted_module(files: &[(&str, &str)]) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("build.gradle.kts"),
+        "plugins { kotlin(\"multiplatform\") }\nkotlin {\n    jvm()\n    iosArm64()\n    iosX64()\n    linuxX64()\n}\n",
+    )
+    .unwrap();
+    for (path, text) in files {
+        let file = dir.path().join(path);
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(file, text).unwrap();
+    }
+    dir
+}
+
+fn messages(dir: &tempfile::TempDir) -> Vec<String> {
+    let file = dir.path().join("src/commonMain/kotlin/Platform.kt");
+    let source = std::fs::read_to_string(&file).unwrap();
+    missing_actuals(dir.path(), &file, &source).into_iter().map(|d| d.message).collect()
+}
+
+#[test]
+fn an_expect_names_the_targets_that_lack_an_actual() {
+    let dir = targeted_module(&[
+        ("src/commonMain/kotlin/Platform.kt", "expect fun name(): String\n"),
+        ("src/jvmMain/kotlin/Platform.jvm.kt", "actual fun name(): String = \"jvm\"\n"),
+        ("src/iosArm64Main/kotlin/Platform.ios.kt", "actual fun name(): String = \"ios\"\n"),
+    ]);
+    assert_eq!(messages(&dir), vec!["expect 'name' has no actual for iosX64, linuxX64"]);
+}
+
+#[test]
+fn an_actual_in_an_intermediate_set_serves_the_targets_it_groups() {
+    let dir = targeted_module(&[
+        ("src/commonMain/kotlin/Platform.kt", "expect fun name(): String\n"),
+        ("src/jvmMain/kotlin/Platform.jvm.kt", "actual fun name(): String = \"jvm\"\n"),
+        ("src/iosMain/kotlin/Platform.ios.kt", "actual fun name(): String = \"ios\"\n"),
+        ("src/linuxX64Main/kotlin/Platform.linux.kt", "actual fun name(): String = \"linux\"\n"),
+    ]);
+    assert!(messages(&dir).is_empty());
+}
+
+#[test]
+fn a_native_set_serves_every_native_target_but_not_the_jvm() {
+    let dir = targeted_module(&[
+        ("src/commonMain/kotlin/Platform.kt", "expect fun name(): String\n"),
+        ("src/nativeMain/kotlin/Platform.native.kt", "actual fun name(): String = \"native\"\n"),
+    ]);
+    assert_eq!(messages(&dir), vec!["expect 'name' has no actual for jvm"]);
+}
+
+#[test]
+fn an_actual_in_a_set_no_declared_target_matches_is_not_second_guessed() {
+    let dir = targeted_module(&[
+        ("src/commonMain/kotlin/Platform.kt", "expect fun name(): String\n"),
+        ("src/androidMain/kotlin/Platform.android.kt", "actual fun name(): String = \"android\"\n"),
+    ]);
+    assert!(messages(&dir).is_empty());
+}

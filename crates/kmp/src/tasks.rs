@@ -29,15 +29,15 @@ enum Kind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct Target {
-    name: String,
+pub(crate) struct Target {
+    pub(crate) name: String,
     kind: Kind,
 }
 
 const NATIVE_PREFIXES: [&str; 6] = ["ios", "macos", "tvos", "watchos", "linux", "mingw"];
 
 /// The targets a build file declares, in declaration order.
-fn targets(build_file: &str) -> Vec<Target> {
+pub(crate) fn targets(build_file: &str) -> Vec<Target> {
     let mut found: Vec<Target> = Vec::new();
     for line in build_file.lines().map(str::trim).filter(|l| !l.starts_with("//")) {
         let bytes = line.as_bytes();
@@ -158,7 +158,7 @@ fn build_task(root: &Path, dir: &Path, path: &str, names: &[String], declared: &
     ProjectTask { label: format!("Gradle: {}", labels.join(" ")), command, report_dirs }
 }
 
-fn build_file_text(dir: &Path) -> String {
+pub(crate) fn build_file_text(dir: &Path) -> String {
     ["build.gradle.kts", "build.gradle"]
         .iter()
         .find_map(|name| std::fs::read_to_string(dir.join(name)).ok())
@@ -180,7 +180,7 @@ pub fn project_tasks(root: &Path) -> Vec<ProjectTask> {
 /// The targets a source set named `base` (its name without `Main`/`Test`)
 /// covers: `common` all of them, a target's own name that target, and the
 /// intermediate sets (`ios`, `native`, `apple`) the targets they group.
-fn covered<'a>(base: &str, declared: &'a [Target]) -> Vec<&'a Target> {
+pub(crate) fn covered<'a>(base: &str, declared: &'a [Target]) -> Vec<&'a Target> {
     let apple = ["ios", "macos", "tvos", "watchos"];
     declared
         .iter()
