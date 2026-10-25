@@ -60,6 +60,10 @@ impl Extension for KmpExtension {
         server_diagnostics::is_spurious(project_root, file, code, message)
     }
 
+    fn definitions(&self, project_root: &Path, file: &Path, source: &str, byte: usize) -> Vec<Counterpart> {
+        expect_actual::expect_definitions(project_root, file, source, byte)
+    }
+
     fn counterpart_lines(&self, source: &str) -> Vec<usize> {
         expect_actual::declaration_lines(source)
     }

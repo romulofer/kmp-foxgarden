@@ -196,3 +196,43 @@ fn an_actual_in_a_set_no_declared_target_matches_is_not_second_guessed() {
     ]);
     assert!(messages(&dir).is_empty());
 }
+
+fn definitions_at(dir: &tempfile::TempDir, relative: &str, needle: &str) -> Vec<Counterpart> {
+    let file = dir.path().join(relative);
+    let source = std::fs::read_to_string(&file).unwrap();
+    expect_definitions(dir.path(), &file, &source, source.find(needle).unwrap() + 1)
+}
+
+#[test]
+fn a_call_to_an_expect_resolves_to_its_declaration() {
+    let dir = module();
+    std::fs::write(
+        dir.path().join("src/jvmMain/kotlin/Use.kt"),
+        "fun use() = platformName().length\n",
+    )
+    .unwrap();
+    let found = definitions_at(&dir, "src/jvmMain/kotlin/Use.kt", "platformName");
+    assert_eq!(found.len(), 1);
+    assert!(found[0].path.ends_with("src/commonMain/kotlin/Platform.kt"));
+    assert_eq!(found[0].label, "commonMain");
+}
+
+#[test]
+fn the_declaration_under_the_caret_is_not_its_own_definition() {
+    let dir = module();
+    assert!(definitions_at(&dir, "src/commonMain/kotlin/Platform.kt", "platformName").is_empty());
+}
+
+#[test]
+fn an_identifier_naming_no_expect_has_no_definition_here() {
+    let dir = module();
+    std::fs::write(dir.path().join("src/jvmMain/kotlin/Use.kt"), "fun use() = somethingElse()\n").unwrap();
+    assert!(definitions_at(&dir, "src/jvmMain/kotlin/Use.kt", "somethingElse").is_empty());
+}
+
+#[test]
+fn identifier_at_finds_the_word_around_a_byte() {
+    assert_eq!(identifier_at("a = foo_1(x)", 6), Some("foo_1"));
+    assert_eq!(identifier_at("a = foo_1(x)", 9), Some("foo_1"), "just past the end still names it");
+    assert_eq!(identifier_at("  ", 1), None);
+}

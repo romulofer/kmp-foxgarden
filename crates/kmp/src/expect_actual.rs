@@ -179,6 +179,40 @@ pub fn declaration_lines(source: &str) -> Vec<usize> {
         .collect()
 }
 
+/// The `expect` declarations the identifier at `byte` may refer to, for a call
+/// site a language server could not resolve (it analyzes every source set as
+/// one module and answers nothing for a call to an `expect`). Matched by name,
+/// like [`counterparts`]; empty outside a multiplatform module or when the
+/// identifier names no `expect`. The declaration under the caret itself is
+/// left out, so a jump never lands where it started.
+pub fn expect_definitions(project_root: &Path, file: &Path, source: &str, byte: usize) -> Vec<Counterpart> {
+    let Some((module, _)) = locate(project_root, file) else {
+        return Vec::new();
+    };
+    let Some(name) = identifier_at(source, byte) else {
+        return Vec::new();
+    };
+    let mut found: Vec<Counterpart> = module_declarations(&module)
+        .into_iter()
+        .filter(|(_, path, d)| {
+            d.role == Role::Expect && d.name == name && !(path == file && (d.name_byte..d.name_byte + name.len()).contains(&byte))
+        })
+        .map(|(label, path, d)| Counterpart { path, byte_offset: d.name_byte, label })
+        .collect();
+    found.sort_by(|a, b| (&a.label, &a.path, a.byte_offset).cmp(&(&b.label, &b.path, b.byte_offset)));
+    found
+}
+
+/// The identifier (letters, digits, underscore) containing or ending at `byte`.
+fn identifier_at(source: &str, byte: usize) -> Option<&str> {
+    let bytes = source.as_bytes();
+    let at = byte.min(bytes.len());
+    let is_word = |b: &u8| b.is_ascii_alphanumeric() || *b == b'_';
+    let start = bytes[..at].iter().rposition(|b| !is_word(b)).map_or(0, |i| i + 1);
+    let end = at + bytes[at..].iter().position(|b| !is_word(b)).unwrap_or(bytes.len() - at);
+    (start < end).then(|| &source[start..end])
+}
+
 /// Every `expect`/`actual` declaration in the module's sources, with the
 /// source set and file each sits in.
 fn module_declarations(module: &Path) -> Vec<(String, PathBuf, Declaration)> {
