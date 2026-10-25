@@ -7,16 +7,21 @@
 //! build file: no Gradle run, so it is cheap enough to ask whenever a tab is
 //! focused.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// The directories under `src/<source set>/` that hold sources.
-const SOURCE_DIRS: [&str; 3] = ["kotlin", "java", "resources"];
+pub(crate) const SOURCE_DIRS: [&str; 3] = ["kotlin", "java", "resources"];
 
 /// The source set `file` belongs to, when it sits in a Kotlin Multiplatform
 /// module of the project at `project_root`. `None` for any other file,
 /// including every file of an ordinary Gradle or Maven module, whose
 /// `src/main` and `src/test` are not source sets in this sense.
 pub fn source_set(project_root: &Path, file: &Path) -> Option<String> {
+    locate(project_root, file).map(|(_, set)| set)
+}
+
+/// The multiplatform module `file` sits in and the source set within it.
+pub(crate) fn locate(project_root: &Path, file: &Path) -> Option<(PathBuf, String)> {
     let relative = file.strip_prefix(project_root).ok()?;
     let parts: Vec<&str> = relative.iter().filter_map(|p| p.to_str()).collect();
     // `src/<set>/<kotlin|java|resources>/<file...>`: the first `src` that
@@ -24,8 +29,8 @@ pub fn source_set(project_root: &Path, file: &Path) -> Option<String> {
     let at = parts
         .windows(4)
         .position(|w| w[0] == "src" && SOURCE_DIRS.contains(&w[2]))?;
-    let module = project_root.join(parts[..at].iter().collect::<std::path::PathBuf>());
-    uses_multiplatform_plugin(&module).then(|| parts[at + 1].to_string())
+    let module = project_root.join(parts[..at].iter().collect::<PathBuf>());
+    uses_multiplatform_plugin(&module).then(|| (module, parts[at + 1].to_string()))
 }
 
 /// Whether the Gradle build file in `module` applies the multiplatform

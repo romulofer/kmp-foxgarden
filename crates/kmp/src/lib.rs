@@ -3,13 +3,14 @@
 //!
 //! It contributes no language: Kotlin's grammar, language server and Gradle
 //! tooling belong to the Java/Kotlin extension, and this one only adds what
-//! exists in a multiplatform project. Phase 1 is source-set awareness; later
-//! phases add `expect`/`actual` navigation and per-target tasks.
+//! exists in a multiplatform project: source-set awareness and `expect`/`actual`
+//! navigation, with per-target tasks to come.
 
 use std::path::Path;
 
-use fg_extension::{CURRENT_SCHEMA_VERSION, Contributions, Extension, ExtensionManifest};
+use fg_extension::{CURRENT_SCHEMA_VERSION, Contributions, Counterpart, Extension, ExtensionManifest};
 
+mod expect_actual;
 mod source_set;
 
 pub struct KmpExtension;
@@ -30,6 +31,10 @@ impl Extension for KmpExtension {
 
     fn source_set(&self, project_root: &Path, file: &Path) -> Option<String> {
         source_set::source_set(project_root, file)
+    }
+
+    fn counterparts(&self, project_root: &Path, file: &Path, source: &str, byte: usize) -> Vec<Counterpart> {
+        expect_actual::counterparts(project_root, file, source, byte)
     }
 }
 

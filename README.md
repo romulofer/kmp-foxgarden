@@ -13,9 +13,12 @@ everything Kotlin itself. Both checkouts must sit beside `foxgarden`.
   plugin, the source set it belongs to (`commonMain`, `jvmTest`, ...), shown in
   the status bar. Read from the path and the module's build file; no Gradle
   run.
+- **`expect`/`actual` navigation**: from the declaration on a line, the
+  matching `actual`s of an `expect` (or the `expect` of an `actual`) across the
+  module's source sets, matched by name. Offered by the command palette's
+  "Go to expect/actual".
 
-Planned: `expect`/`actual` navigation and a missing-`actual` diagnostic,
-per-target build/run/test tasks, then per-source-set language server
+Planned: a missing-`actual` diagnostic, per-target build/run/test tasks, then per-source-set language server
 classpaths.
 
 ## Build
