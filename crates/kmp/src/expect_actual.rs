@@ -8,9 +8,10 @@
 //! the user choose. The scan reads every source file of the module, which
 //! is why it answers a command and never a frame.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use fg_extension::Counterpart;
+use fg_extension::{Counterpart, FileDiagnostic, ProblemSeverity};
 
 use crate::source_set::{SOURCE_DIRS, locate};
 
@@ -155,22 +156,57 @@ pub fn counterparts(project_root: &Path, file: &Path, source: &str, byte: usize)
         Role::Actual => Role::Expect,
     };
 
-    let mut found = Vec::new();
-    for set_dir in source_set_dirs(&module) {
+    let mut found: Vec<Counterpart> = module_declarations(&module)
+        .into_iter()
+        .filter(|(_, _, declaration)| declaration.role == wanted && declaration.name == here.name)
+        .map(|(label, path, declaration)| Counterpart { path, byte_offset: declaration.name_byte, label })
+        .collect();
+    found.sort_by(|a, b| (&a.label, &a.path, a.byte_offset).cmp(&(&b.label, &b.path, b.byte_offset)));
+    found
+}
+
+/// Every `expect`/`actual` declaration in the module's sources, with the
+/// source set and file each sits in.
+fn module_declarations(module: &Path) -> Vec<(String, PathBuf, Declaration)> {
+    let mut all = Vec::new();
+    for set_dir in source_set_dirs(module) {
         let set = set_dir.file_name().and_then(|n| n.to_str()).unwrap_or_default().to_string();
         for dir in SOURCE_DIRS.iter().filter(|d| **d != "resources") {
             for path in kotlin_files(&set_dir.join(dir)) {
                 let Ok(text) = std::fs::read_to_string(&path) else { continue };
-                for declaration in declarations(&text) {
-                    if declaration.role == wanted && declaration.name == here.name {
-                        found.push(Counterpart { path: path.clone(), byte_offset: declaration.name_byte, label: set.clone() });
-                    }
-                }
+                all.extend(declarations(&text).into_iter().map(|d| (set.clone(), path.clone(), d)));
             }
         }
     }
-    found.sort_by(|a, b| (&a.label, &a.path, a.byte_offset).cmp(&(&b.label, &b.path, b.byte_offset)));
-    found
+    all
+}
+
+/// A warning on every `expect` in `source` that no `actual` anywhere in the
+/// module fulfils. Matched by name, like [`counterparts`], so an overload with
+/// an `actual` of the same name counts as fulfilled. A file with no `expect`
+/// costs one pass over its own text; the module is only read when it has one.
+pub fn missing_actuals(project_root: &Path, file: &Path, source: &str) -> Vec<FileDiagnostic> {
+    let expects: Vec<Declaration> = declarations(source).into_iter().filter(|d| d.role == Role::Expect).collect();
+    if expects.is_empty() {
+        return Vec::new();
+    }
+    let Some((module, _)) = locate(project_root, file) else {
+        return Vec::new();
+    };
+    let actual_names: HashSet<String> = module_declarations(&module)
+        .into_iter()
+        .filter(|(_, _, d)| d.role == Role::Actual)
+        .map(|(_, _, d)| d.name)
+        .collect();
+    expects
+        .into_iter()
+        .filter(|d| !actual_names.contains(&d.name))
+        .map(|d| FileDiagnostic {
+            range: d.name_byte..d.name_byte + d.name.len(),
+            severity: ProblemSeverity::Warning,
+            message: format!("expect '{}' has no actual declaration", d.name),
+        })
+        .collect()
 }
 
 fn source_set_dirs(module: &Path) -> Vec<PathBuf> {

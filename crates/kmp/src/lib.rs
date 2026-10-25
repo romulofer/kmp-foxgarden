@@ -8,7 +8,7 @@
 
 use std::path::Path;
 
-use fg_extension::{CURRENT_SCHEMA_VERSION, Contributions, Counterpart, Extension, ExtensionManifest};
+use fg_extension::{CURRENT_SCHEMA_VERSION, Contributions, Counterpart, Extension, FileDiagnostic, ExtensionManifest};
 
 mod expect_actual;
 mod source_set;
@@ -31,6 +31,10 @@ impl Extension for KmpExtension {
 
     fn source_set(&self, project_root: &Path, file: &Path) -> Option<String> {
         source_set::source_set(project_root, file)
+    }
+
+    fn file_diagnostics(&self, project_root: &Path, file: &Path, source: &str) -> Vec<FileDiagnostic> {
+        expect_actual::missing_actuals(project_root, file, source)
     }
 
     fn counterparts(&self, project_root: &Path, file: &Path, source: &str, byte: usize) -> Vec<Counterpart> {

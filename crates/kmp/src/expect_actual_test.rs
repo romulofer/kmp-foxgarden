@@ -106,3 +106,26 @@ fn files_outside_a_multiplatform_module_have_none() {
     let file = dir.path().join("src/main/kotlin/A.kt");
     assert!(counterparts(dir.path(), &file, "expect fun a()\n", 0).is_empty());
 }
+
+#[test]
+fn an_expect_nothing_fulfils_is_flagged_on_its_name() {
+    let dir = module();
+    let file = dir.path().join("src/commonMain/kotlin/Extra.kt");
+    let source = "expect fun platformName(): String\nexpect class Lonely\n";
+    let found = missing_actuals(dir.path(), &file, source);
+    assert_eq!(found.len(), 1, "platformName has actuals, Lonely has none");
+    assert_eq!(&source[found[0].range.clone()], "Lonely");
+    assert_eq!(found[0].severity, ProblemSeverity::Warning);
+    assert_eq!(found[0].message, "expect 'Lonely' has no actual declaration");
+}
+
+#[test]
+fn files_without_an_expect_or_outside_a_module_are_not_flagged() {
+    let dir = module();
+    let file = dir.path().join("src/jvmMain/kotlin/Platform.jvm.kt");
+    assert!(missing_actuals(dir.path(), &file, "actual fun a() {}\n").is_empty());
+    let plain = tempfile::tempdir().unwrap();
+    std::fs::write(plain.path().join("build.gradle.kts"), "plugins { kotlin(\"jvm\") }").unwrap();
+    let file = plain.path().join("src/main/kotlin/A.kt");
+    assert!(missing_actuals(plain.path(), &file, "expect fun a()\n").is_empty());
+}

@@ -18,7 +18,10 @@ everything Kotlin itself. Both checkouts must sit beside `foxgarden`.
   module's source sets, matched by name. Offered by the command palette's
   "Go to expect/actual".
 
-Planned: a missing-`actual` diagnostic, per-target build/run/test tasks, then per-source-set language server
+- **Missing `actual`**: a warning on an `expect` that no `actual` of the same
+  name in the module fulfils, refreshed when a file opens, reloads or is saved.
+
+Planned: per-target `actual` checks, per-target build/run/test tasks, then per-source-set language server
 classpaths.
 
 ## Build
