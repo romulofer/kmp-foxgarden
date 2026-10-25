@@ -4,8 +4,9 @@
 //! and fulfils it with an `actual` in each platform's source set. Both
 //! modifiers are syntactic, so declarations are found by reading a line's
 //! modifiers and name rather than by running a compiler, and matched by
-//! name: an overloaded function lists every overload, and the picker lets
-//! the user choose. The scan reads every source file of the module, which
+//! name (and a function's parameter types when its list sits on one line, so
+//! overloads are told apart); a name left with several matches lists them all
+//! and the picker lets the user choose. The scan reads every source file of the module, which
 //! is why it answers a command and never a frame.
 
 use std::path::{Path, PathBuf};
@@ -27,6 +28,19 @@ struct Declaration {
     name: String,
     /// Byte offset of `name` in the text it was found in.
     name_byte: usize,
+    /// A function's parameter types, whitespace removed, when its parameter
+    /// list closes on the same line. `None` for anything else, which is then
+    /// matched by name alone.
+    parameters: Option<Vec<String>>,
+}
+
+impl Declaration {
+    /// Whether `self` and `other` can be an `expect`/`actual` pair: the same
+    /// name, and the same parameter types when both are known, so overloads
+    /// are told apart.
+    fn pairs_with(&self, other: &Declaration) -> bool {
+        self.name == other.name && !matches!((&self.parameters, &other.parameters), (Some(a), Some(b)) if a != b)
+    }
 }
 
 const MODIFIERS: [&str; 24] = [
@@ -63,11 +77,12 @@ fn declaration_in(line: &str, line_start: usize) -> Option<Declaration> {
             "expect" => role = Some(Role::Expect),
             "actual" => role = Some(Role::Actual),
             _ if word.starts_with('@') => {}
-            "typealias" => return named(line, line_start, role?, after),
+            "typealias" => return named(line, line_start, role?, after, false),
             _ if KEYWORDS.contains(&word) && role.is_some() => {
                 // `fun interface Name`: the keyword is `interface`.
-                let after = if word == "fun" { after.strip_prefix("interface").map_or(after, str::trim_start) } else { after };
-                return named(line, line_start, role?, after);
+                let interface = if word == "fun" { after.strip_prefix("interface") } else { None };
+                let is_function = word == "fun" && interface.is_none();
+                return named(line, line_start, role?, interface.map_or(after, str::trim_start), is_function);
             }
             _ if MODIFIERS.contains(&word) => {}
             _ => return None,
@@ -81,7 +96,7 @@ fn declaration_in(line: &str, line_start: usize) -> Option<Declaration> {
 
 /// The declared name at the start of `after` (what follows the keyword),
 /// skipping type parameters and a receiver: `<T> List<T>.first` names `first`.
-fn named(line: &str, line_start: usize, role: Role, after: &str) -> Option<Declaration> {
+fn named(line: &str, line_start: usize, role: Role, after: &str, is_function: bool) -> Option<Declaration> {
     let mut at = line.len() - after.len();
     let bytes = line.as_bytes();
     skip_angles(bytes, &mut at);
@@ -107,7 +122,45 @@ fn named(line: &str, line_start: usize, role: Role, after: &str) -> Option<Decla
         }
     }
     let (start, end) = name?;
-    Some(Declaration { role, name: line[start..end].to_string(), name_byte: line_start + start })
+    let parameters = if is_function { parameter_types(&line[end..]) } else { None };
+    Some(Declaration { role, name: line[start..end].to_string(), name_byte: line_start + start, parameters })
+}
+
+/// The parameter types of the list `text` starts with (`(a: Int, b: List<String>)`),
+/// whitespace removed, or `None` when it is not one or does not close in `text`.
+fn parameter_types(text: &str) -> Option<Vec<String>> {
+    let inner = text.trim_start().strip_prefix('(')?;
+    let mut depth = 0usize;
+    let mut parts: Vec<&str> = Vec::new();
+    let mut part_start = 0;
+    let mut previous = ' ';
+    for (at, c) in inner.char_indices() {
+        match c {
+            '(' | '<' | '[' => depth += 1,
+            '>' if previous == '-' => {}
+            ')' | '>' | ']' if depth > 0 => depth -= 1,
+            ')' => {
+                parts.push(&inner[part_start..at]);
+                return Some(
+                    parts
+                        .into_iter()
+                        .filter(|p| !p.trim().is_empty())
+                        .map(|p| {
+                            let ty = p.split_once(':').map_or("", |(_, ty)| ty);
+                            ty.split_once('=').map_or(ty, |(ty, _)| ty).split_whitespace().collect()
+                        })
+                        .collect(),
+                );
+            }
+            ',' if depth == 0 => {
+                parts.push(&inner[part_start..at]);
+                part_start = at + 1;
+            }
+            _ => {}
+        }
+        previous = c;
+    }
+    None
 }
 
 fn skip_spaces(bytes: &[u8], at: &mut usize) {
@@ -158,7 +211,7 @@ pub fn counterparts(project_root: &Path, file: &Path, source: &str, byte: usize)
 
     let mut found: Vec<Counterpart> = module_declarations(&module)
         .into_iter()
-        .filter(|(_, _, declaration)| declaration.role == wanted && declaration.name == here.name)
+        .filter(|(_, _, declaration)| declaration.role == wanted && declaration.pairs_with(&here))
         .map(|(label, path, declaration)| Counterpart { path, byte_offset: declaration.name_byte, label })
         .collect();
     found.sort_by(|a, b| (&a.label, &a.path, a.byte_offset).cmp(&(&b.label, &b.path, b.byte_offset)));
@@ -236,8 +289,9 @@ fn split_set(set: &str) -> Option<(&str, &str)> {
 }
 
 /// A warning on every `expect` in `source` that some declared target gets no
-/// `actual` for. Matched by name, like [`counterparts`], so an overload with
-/// an `actual` of the same name counts as fulfilled. A target is served by an
+/// `actual` for. Matched like [`counterparts`]: by name and, for a function whose
+/// parameters sit on one line, by parameter types, so an `actual` for another
+/// overload does not count. A target is served by an
 /// `actual` in its own source set or in an intermediate one that covers it
 /// (`iosMain` for `iosArm64`). A file with no `expect` costs one pass over its
 /// own text; the module is only read when it has one.
@@ -255,10 +309,10 @@ pub fn missing_actuals(project_root: &Path, file: &Path, source: &str) -> Vec<Fi
         return Vec::new();
     };
     let declared = targets(&build_file_text(&module));
-    let actuals: Vec<(String, String)> = module_declarations(&module)
+    let actuals: Vec<(String, Declaration)> = module_declarations(&module)
         .into_iter()
         .filter(|(_, _, d)| d.role == Role::Actual)
-        .map(|(set, _, d)| (set, d.name))
+        .map(|(set, _, d)| (set, d))
         .collect();
     let (own_base, own_suffix) = split_set(&own_set).unwrap_or(("common", "Main"));
 
@@ -266,7 +320,7 @@ pub fn missing_actuals(project_root: &Path, file: &Path, source: &str) -> Vec<Fi
         .into_iter()
         .filter_map(|d| {
             let named: Vec<&str> =
-                actuals.iter().filter(|(_, name)| *name == d.name).map(|(set, _)| set.as_str()).collect();
+                actuals.iter().filter(|(_, actual)| d.pairs_with(actual)).map(|(set, _)| set.as_str()).collect();
             let message = if named.is_empty() {
                 format!("expect '{}' has no actual declaration", d.name)
             } else {

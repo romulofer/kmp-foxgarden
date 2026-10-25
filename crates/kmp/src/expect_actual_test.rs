@@ -236,3 +236,40 @@ fn identifier_at_finds_the_word_around_a_byte() {
     assert_eq!(identifier_at("a = foo_1(x)", 9), Some("foo_1"), "just past the end still names it");
     assert_eq!(identifier_at("  ", 1), None);
 }
+
+#[test]
+fn parameter_types_ignore_names_defaults_and_spacing() {
+    assert_eq!(parameter_types("(a: Int, b : List<Map<String, Int>> = emptyList())"), Some(vec!["Int".into(), "List<Map<String,Int>>".into()]));
+    assert_eq!(parameter_types("(f: (Int, Int) -> Unit)"), Some(vec!["(Int,Int)->Unit".into()]));
+    assert_eq!(parameter_types("()"), Some(vec![]));
+    assert_eq!(parameter_types("(a: Int,"), None);
+    assert_eq!(parameter_types(": Int"), None);
+}
+
+#[test]
+fn overloads_pair_by_parameter_types() {
+    let expect = declaration_in("expect fun show(value: Int)\n", 0).unwrap();
+    let same = declaration_in("actual fun show(v: Int) {}\n", 0).unwrap();
+    let other = declaration_in("actual fun show(v: String) {}\n", 0).unwrap();
+    let unknown = declaration_in("actual fun show(\n", 0).unwrap();
+    assert!(expect.pairs_with(&same));
+    assert!(!expect.pairs_with(&other));
+    assert!(expect.pairs_with(&unknown), "an unreadable list is matched by name alone");
+}
+
+#[test]
+fn an_overload_jumps_only_to_the_actual_with_its_parameter_types() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("build.gradle.kts"), "plugins { kotlin(\"multiplatform\") }\nkotlin { jvm() }").unwrap();
+    for (path, text) in [
+        ("src/commonMain/kotlin/Platform.kt", "expect fun show(value: Int)\nexpect fun show(value: String)\n"),
+        ("src/jvmMain/kotlin/Platform.jvm.kt", "actual fun show(v: Int) {}\n"),
+    ] {
+        let file = dir.path().join(path);
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(file, text).unwrap();
+    }
+    assert_eq!(counterparts_at(&dir, "src/commonMain/kotlin/Platform.kt", "show(value: Int)").len(), 1);
+    assert!(counterparts_at(&dir, "src/commonMain/kotlin/Platform.kt", "show(value: String)").is_empty());
+    assert_eq!(messages(&dir), ["expect 'show' has no actual declaration"]);
+}
