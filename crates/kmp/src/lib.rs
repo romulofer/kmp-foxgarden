@@ -8,10 +8,11 @@
 
 use std::path::Path;
 
-use fg_extension::{CURRENT_SCHEMA_VERSION, Contributions, Counterpart, Extension, FileDiagnostic, ExtensionManifest};
+use fg_extension::{CURRENT_SCHEMA_VERSION, Contributions, Counterpart, Extension, FileDiagnostic, ProjectTask, ExtensionManifest};
 
 mod expect_actual;
 mod source_set;
+mod tasks;
 
 pub struct KmpExtension;
 
@@ -31,6 +32,10 @@ impl Extension for KmpExtension {
 
     fn source_set(&self, project_root: &Path, file: &Path) -> Option<String> {
         source_set::source_set(project_root, file)
+    }
+
+    fn project_tasks(&self, project_root: &Path) -> Vec<ProjectTask> {
+        tasks::project_tasks(project_root)
     }
 
     fn file_diagnostics(&self, project_root: &Path, file: &Path, source: &str) -> Vec<FileDiagnostic> {

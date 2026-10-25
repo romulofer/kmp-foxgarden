@@ -37,7 +37,7 @@ pub(crate) fn locate(project_root: &Path, file: &Path) -> Option<(PathBuf, Strin
 /// plugin, in any spelling a build uses: `kotlin("multiplatform")`,
 /// `id("org.jetbrains.kotlin.multiplatform")`, a version-catalog alias such as
 /// `libs.plugins.kotlin.multiplatform`, or `apply plugin: '...multiplatform'`.
-fn uses_multiplatform_plugin(module: &Path) -> bool {
+pub(crate) fn uses_multiplatform_plugin(module: &Path) -> bool {
     ["build.gradle.kts", "build.gradle"].iter().any(|name| {
         std::fs::read_to_string(module.join(name)).is_ok_and(|text| {
             text.lines()

@@ -21,7 +21,12 @@ everything Kotlin itself. Both checkouts must sit beside `foxgarden`.
 - **Missing `actual`**: a warning on an `expect` that no `actual` of the same
   name in the module fulfils, refreshed when a file opens, reloads or is saved.
 
-Planned: per-target `actual` checks, per-target build/run/test tasks, then per-source-set language server
+- **Per-target Gradle tasks**: the command palette lists `allTests` and each
+  declared target's `<target>Test` (plus `linkDebugExecutable<Target>` for
+  native ones), read from the build file and run through the project's Gradle
+  wrapper.
+
+Planned: per-target `actual` checks, run configurations for these tasks, build/run/test tasks, then per-source-set language server
 classpaths.
 
 ## Build
