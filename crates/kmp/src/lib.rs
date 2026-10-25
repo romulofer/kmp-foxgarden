@@ -12,6 +12,7 @@ use fg_extension::{CURRENT_SCHEMA_VERSION, Contributions, Counterpart, Extension
 
 mod expect_actual;
 mod reports;
+mod server_diagnostics;
 mod source_set;
 mod tasks;
 
@@ -53,6 +54,10 @@ impl Extension for KmpExtension {
 
     fn counterparts(&self, project_root: &Path, file: &Path, source: &str, byte: usize) -> Vec<Counterpart> {
         expect_actual::counterparts(project_root, file, source, byte)
+    }
+
+    fn is_spurious_server_diagnostic(&self, project_root: &Path, file: &Path, code: &str, message: &str) -> bool {
+        server_diagnostics::is_spurious(project_root, file, code, message)
     }
 
     fn counterpart_lines(&self, source: &str) -> Vec<usize> {
