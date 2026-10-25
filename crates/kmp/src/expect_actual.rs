@@ -165,6 +165,20 @@ pub fn counterparts(project_root: &Path, file: &Path, source: &str, byte: usize)
     found
 }
 
+/// The 0-based lines of `source` that declare an `expect` or an `actual` —
+/// where the gutter marks a jump. Text only, no project scan.
+pub fn declaration_lines(source: &str) -> Vec<usize> {
+    if !source.contains("expect") && !source.contains("actual") {
+        return Vec::new();
+    }
+    source
+        .lines()
+        .enumerate()
+        .filter(|(_, line)| declaration_in(line, 0).is_some())
+        .map(|(index, _)| index)
+        .collect()
+}
+
 /// Every `expect`/`actual` declaration in the module's sources, with the
 /// source set and file each sits in.
 fn module_declarations(module: &Path) -> Vec<(String, PathBuf, Declaration)> {

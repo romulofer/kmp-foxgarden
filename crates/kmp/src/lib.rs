@@ -54,6 +54,10 @@ impl Extension for KmpExtension {
     fn counterparts(&self, project_root: &Path, file: &Path, source: &str, byte: usize) -> Vec<Counterpart> {
         expect_actual::counterparts(project_root, file, source, byte)
     }
+
+    fn counterpart_lines(&self, source: &str) -> Vec<usize> {
+        expect_actual::declaration_lines(source)
+    }
 }
 
 #[cfg(test)]

@@ -129,3 +129,10 @@ fn files_without_an_expect_or_outside_a_module_are_not_flagged() {
     let file = plain.path().join("src/main/kotlin/A.kt");
     assert!(missing_actuals(plain.path(), &file, "expect fun a()\n").is_empty());
 }
+
+#[test]
+fn declaration_lines_are_the_expect_and_actual_ones() {
+    let source = "package p\n\nexpect fun a(): Int\nfun plain() {}\nprivate actual class B\nval expected = 1\n";
+    assert_eq!(declaration_lines(source), vec![2, 4]);
+    assert!(declaration_lines("fun main() {}\n").is_empty());
+}
