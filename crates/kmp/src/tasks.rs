@@ -32,6 +32,9 @@ enum Kind {
 pub(crate) struct Target {
     pub(crate) name: String,
     kind: Kind,
+    /// A JS target whose block calls `browser()`: only those have a dev
+    /// server to run (`nodejs()` ones have `<name>NodeRun`, not offered).
+    browser: bool,
 }
 
 const NATIVE_PREFIXES: [&str; 6] = ["ios", "macos", "tvos", "watchos", "linux", "mingw"];
@@ -39,6 +42,8 @@ const NATIVE_PREFIXES: [&str; 6] = ["ios", "macos", "tvos", "watchos", "linux", 
 /// The targets a build file declares, in declaration order.
 pub(crate) fn targets(build_file: &str) -> Vec<Target> {
     let mut found: Vec<Target> = Vec::new();
+    // The target whose block a following `browser()` belongs to.
+    let mut current: Option<usize> = None;
     for line in build_file.lines().map(str::trim).filter(|l| !l.starts_with("//")) {
         let bytes = line.as_bytes();
         let mut at = 0;
@@ -51,8 +56,15 @@ pub(crate) fn targets(build_file: &str) -> Vec<Target> {
             let word = &line[at..end];
             let rest = line[end..].trim_start();
             at = end;
+            let called = rest.starts_with('(') || rest.starts_with('{');
+            if word == "browser" && called {
+                if let Some(target) = current.and_then(|i| found.get_mut(i)).filter(|t| t.kind == Kind::Js) {
+                    target.browser = true;
+                }
+                continue;
+            }
             let Some(kind) = kind_of(word) else { continue };
-            if !(rest.starts_with('(') || rest.starts_with('{')) {
+            if !called {
                 continue;
             }
             // `jvm("desktop")` renames the target, and with it its tasks.
@@ -62,8 +74,10 @@ pub(crate) fn targets(build_file: &str) -> Vec<Target> {
                 .and_then(|args| args.split('"').next())
                 .filter(|name| !name.is_empty() && name.bytes().all(is_word))
                 .unwrap_or(word);
-            if !found.iter().any(|t| t.name == name) {
-                found.push(Target { name: name.to_string(), kind });
+            current = found.iter().position(|t| t.name == name);
+            if current.is_none() {
+                found.push(Target { name: name.to_string(), kind, browser: false });
+                current = Some(found.len() - 1);
             }
         }
     }
@@ -97,6 +111,9 @@ fn task_names(targets: &[Target]) -> Vec<String> {
         names.push(format!("{}Test", target.name));
         if target.kind == Kind::Native {
             names.push(format!("linkDebugExecutable{}", capitalized(&target.name)));
+        }
+        if target.browser {
+            names.push(format!("{}BrowserDevelopmentRun", target.name));
         }
     }
     names

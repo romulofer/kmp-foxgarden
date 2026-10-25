@@ -171,3 +171,18 @@ fn a_submodule_file_gets_a_task_with_its_project_path() {
     assert_eq!(task.label, "Gradle: :shared:jvmTest");
     assert_eq!(task.report_dirs, [dir.path().join("shared/build/test-results/jvmTest")]);
 }
+
+#[test]
+fn a_js_target_with_a_browser_offers_its_development_server() {
+    let found = targets("kotlin {\n    js(IR) {\n        browser {\n        }\n    }\n    wasmJs { nodejs() }\n    jvm()\n}\n");
+    assert_eq!(
+        task_names(&found),
+        ["allTests", "jsTest", "jsBrowserDevelopmentRun", "wasmJsTest", "jvmTest"]
+    );
+}
+
+#[test]
+fn a_browser_call_outside_a_js_target_is_not_attributed_to_it() {
+    let found = targets("kotlin {\n    js()\n    jvm()\n    browser()\n}\n");
+    assert_eq!(task_names(&found), ["allTests", "jsTest", "jvmTest"]);
+}
