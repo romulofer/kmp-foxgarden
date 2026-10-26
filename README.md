@@ -31,7 +31,16 @@ everything Kotlin itself. Both checkouts must sit beside `foxgarden`.
   `allTests` for common code and the covered targets' tests for a platform
   or a group such as `iosMain`.
 
-Planned: per-target `actual` checks, run configurations for these tasks, build/run/test tasks, then per-source-set language server
+- **New project template**: "Kotlin Multiplatform" in the new-project wizard for
+  Gradle + Kotlin: a `jvm()` target, an `expect`/`actual` pair, a `main` and a
+  common test. It names the JVM extension's Gradle and Kotlin, so it is left out
+  when that extension is disabled.
+
+Targets are read from the build file's text; `androidNative*` targets count as
+native ones (`androidTarget()` does not).
+
+Planned: run configurations for these tasks, reading targets from `kotlin { }`
+blocks that apply them indirectly, and per-source-set language server
 classpaths.
 
 ## Build
