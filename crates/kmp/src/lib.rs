@@ -3,20 +3,47 @@
 //!
 //! It contributes no language: Kotlin's grammar, language server and Gradle
 //! tooling belong to the Java/Kotlin extension, and this one only adds what
-//! exists in a multiplatform project: source-set awareness and `expect`/`actual`
-//! navigation, with per-target tasks to come.
+//! exists in a multiplatform project: source-set awareness, `expect`/`actual`
+//! navigation, per-target Gradle tasks and a new-project template.
 
 use std::path::Path;
 
-use fg_extension::{CURRENT_SCHEMA_VERSION, Contributions, Counterpart, Extension, FileDiagnostic, ProjectTask, TaskTestResult, ExtensionManifest};
+use fg_extension::{
+    CURRENT_SCHEMA_VERSION, Contributions, Counterpart, Extension, ExtensionManifest, FileDiagnostic, ProjectTask, ScaffoldSpec,
+    TaskTestResult,
+};
 
 mod expect_actual;
 mod reports;
+mod scaffold;
 mod server_diagnostics;
 mod source_set;
 mod tasks;
 
-pub struct KmpExtension;
+/// Whether the new-project template is offered is the host's call: it is
+/// built on the Gradle and Kotlin support of the JVM extension, so a host that
+/// runs without that one registers this with [`KmpExtension::without_scaffold`].
+pub struct KmpExtension {
+    scaffold: bool,
+}
+
+impl KmpExtension {
+    pub fn new() -> Self {
+        Self { scaffold: true }
+    }
+
+    /// Everything but the new-project template, for a host without the
+    /// Gradle build tool and Kotlin language it names.
+    pub fn without_scaffold() -> Self {
+        Self { scaffold: false }
+    }
+}
+
+impl Default for KmpExtension {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl Extension for KmpExtension {
     fn manifest(&self) -> ExtensionManifest {
@@ -29,7 +56,11 @@ impl Extension for KmpExtension {
     }
 
     fn contributions(&self) -> Contributions {
-        Contributions::default()
+        Contributions { scaffolds: if self.scaffold { scaffold::contributions() } else { Vec::new() }, ..Contributions::default() }
+    }
+
+    fn scaffold_files(&self, spec: &ScaffoldSpec) -> Option<Vec<(std::path::PathBuf, String)>> {
+        if self.scaffold { scaffold::scaffold_files(spec) } else { None }
     }
 
     fn source_set(&self, project_root: &Path, file: &Path) -> Option<String> {
