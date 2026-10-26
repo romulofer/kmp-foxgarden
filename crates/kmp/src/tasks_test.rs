@@ -186,3 +186,20 @@ fn a_browser_call_outside_a_js_target_is_not_attributed_to_it() {
     let found = targets("kotlin {\n    js()\n    jvm()\n    browser()\n}\n");
     assert_eq!(task_names(&found), ["allTests", "jsTest", "jvmTest"]);
 }
+
+#[test]
+fn android_native_targets_are_native_ones_unlike_the_android_target() {
+    let found = targets("kotlin { androidTarget(); androidNativeArm64(); androidNativeX64() }");
+    assert_eq!(names("kotlin { androidTarget(); androidNativeArm64() }"), ["androidNativeArm64"]);
+    assert_eq!(
+        task_names(&found),
+        [
+            "allTests",
+            "androidNativeArm64Test",
+            "linkDebugExecutableAndroidNativeArm64",
+            "androidNativeX64Test",
+            "linkDebugExecutableAndroidNativeX64",
+        ]
+    );
+    assert_eq!(covered("androidNative", &found).len(), 2);
+}

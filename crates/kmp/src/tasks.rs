@@ -37,7 +37,7 @@ pub(crate) struct Target {
     browser: bool,
 }
 
-const NATIVE_PREFIXES: [&str; 6] = ["ios", "macos", "tvos", "watchos", "linux", "mingw"];
+const NATIVE_PREFIXES: [&str; 7] = ["ios", "macos", "tvos", "watchos", "linux", "mingw", "androidNative"];
 
 /// The targets a build file declares, in declaration order.
 pub(crate) fn targets(build_file: &str) -> Vec<Target> {
